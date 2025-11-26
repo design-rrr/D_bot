@@ -42,6 +42,10 @@ Before running D_Bot, you'll need:
    TWITTER_API_SECRET=your_api_secret
    TWITTER_ACCESS_TOKEN=your_access_token
    TWITTER_ACCESS_TOKEN_SECRET=your_access_token_secret
+
+   # Secret Gist for posted.txt https://gist.github.com/design-rrr/063424572d66de647fa17d791bae5617
+   GIST_ID=063424572d66de647fa17d791bae5617
+   GIST_TOKEN=generated from https://github.com/settings/tokens
    
    # Nostr Configuration
    NOSTR_PRIVATE_KEY=your_nostr_private_key
