@@ -37,7 +37,6 @@ Before running D_Bot, you'll need:
    Create a `.env` file in the root directory:
    ```env
    # Twitter API Credentials
-   TWITTER_BEARER_TOKEN=your_bearer_token
    TWITTER_API_KEY=your_api_key
    TWITTER_API_SECRET=your_api_secret
    TWITTER_ACCESS_TOKEN=your_access_token
@@ -45,7 +44,7 @@ Before running D_Bot, you'll need:
 
    # Secret Gist for posted.txt https://gist.github.com/design-rrr/063424572d66de647fa17d791bae5617
    GIST_ID=063424572d66de647fa17d791bae5617
-   GIST_TOKEN=generated ghp_XXX from https://github.com/settings/tokens
+   GIST_TOKEN=generated without ghp_ from https://github.com/settings/tokens
    
    # Nostr Configuration
    NOSTR_PRIVATE_KEY=your_nostr_private_key
