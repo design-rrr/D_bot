@@ -45,7 +45,7 @@ Before running D_Bot, you'll need:
 
    # Secret Gist for posted.txt https://gist.github.com/design-rrr/063424572d66de647fa17d791bae5617
    GIST_ID=063424572d66de647fa17d791bae5617
-   GIST_TOKEN=generated from https://github.com/settings/tokens
+   GIST_TOKEN=generated ghp_XXX from https://github.com/settings/tokens
    
    # Nostr Configuration
    NOSTR_PRIVATE_KEY=your_nostr_private_key
