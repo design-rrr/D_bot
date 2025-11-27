@@ -19,8 +19,8 @@ const MAX_POSTS_PER_RUN = 2
 console.log('🔍 Environment Variables Check:')
 console.log('   GIST_ID:', GIST_ID ? '✅ Set' : '❌ Missing')
 console.log('   GIST_TOKEN:', GIST_TOKEN ? '✅ Set' : '❌ Missing')
-console.log('   TWITTER_POSTER_API_KEY:', process.env.TWITTER_POSTER_API_KEY ? '✅ Set' : '❌ Missing')
-console.log('   TWITTER_POSTER_API_KEY_SECRET:', process.env.TWITTER_POSTER_API_KEY_SECRET ? '✅ Set' : '❌ Missing')
+console.log('   TWITTER_API_KEY:', process.env.TWITTER_API_KEY ? '✅ Set' : '❌ Missing')
+console.log('   TWITTER_API_KEY_SECRET:', process.env.TWITTER_API_KEY_SECRET ? '✅ Set' : '❌ Missing')
 console.log('   TWITTER_POSTER_ACCESS_TOKEN:', process.env.TWITTER_POSTER_ACCESS_TOKEN ? '✅ Set' : '❌ Missing')
 console.log('   TWITTER_POSTER_ACCESS_TOKEN_SECRET:', process.env.TWITTER_POSTER_ACCESS_TOKEN_SECRET ? '✅ Set' : '❌ Missing')
 console.log('   NOSTR_PRIVATE_KEY:', process.env.NOSTR_PRIVATE_KEY ? '✅ Set' : '❌ Missing')
@@ -30,7 +30,7 @@ if (!GIST_ID || !GIST_TOKEN) {
   process.exit(1)
 }
 
-if (!process.env.TWITTER_POSTER_API_KEY || !process.env.TWITTER_POSTER_API_KEY_SECRET || 
+if (!process.env.TWITTER_API_KEY || !process.env.TWITTER_API_KEY_SECRET || 
     !process.env.TWITTER_POSTER_ACCESS_TOKEN || !process.env.TWITTER_POSTER_ACCESS_TOKEN_SECRET) {
   console.error('❌ Missing Twitter API credentials!')
   console.error('   Make sure all TWITTER_POSTER_* secrets are set in GitHub repository settings.')
@@ -264,10 +264,10 @@ function getRandomMessageFormat({ title, link, author }) {
 }
 
 async function postToTwitter({ title, link, author }) {
-  if (!process.env.TWITTER_POSTER_API_KEY) return console.log('Twitter not configured')
+  if (!process.env.TWITTER_API_KEY) return console.log('Twitter not configured')
   const client = new TwitterApi({
-    appKey: process.env.TWITTER_POSTER_API_KEY,
-    appSecret: process.env.TWITTER_POSTER_API_KEY_SECRET,
+    appKey: process.env.TWITTER_API_KEY,
+    appSecret: process.env.TWITTER_API_KEY_SECRET,
     accessToken: process.env.TWITTER_POSTER_ACCESS_TOKEN,
     accessSecret: process.env.TWITTER_POSTER_ACCESS_TOKEN_SECRET
   })
