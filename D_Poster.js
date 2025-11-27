@@ -12,99 +12,39 @@ const GIST_ID = process.env.GIST_ID
 const GIST_FILENAME = 'posted.txt'
 const GIST_TOKEN = process.env.GIST_TOKEN
 
-// ⭐ ADD THIS: Limit posts per run to avoid Twitter rate limits
-const MAX_POSTS_PER_RUN = 2
-
-// Debug: Check if all required environment variables are loaded
-console.log('🔍 Environment Variables Check:')
-console.log('   GIST_ID:', GIST_ID ? '✅ Set' : '❌ Missing')
-console.log('   GIST_TOKEN:', GIST_TOKEN ? '✅ Set' : '❌ Missing')
-console.log('   TWITTER_POSTER_API_KEY:', process.env.TWITTER_POSTER_API_KEY ? '✅ Set' : '❌ Missing')
-console.log('   TWITTER_POSTER_API_KEY_SECRET:', process.env.TWITTER_POSTER_API_KEY_SECRET ? '✅ Set' : '❌ Missing')
-console.log('   TWITTER_POSTER_ACCESS_TOKEN:', process.env.TWITTER_POSTER_ACCESS_TOKEN ? '✅ Set' : '❌ Missing')
-console.log('   TWITTER_POSTER_ACCESS_TOKEN_SECRET:', process.env.TWITTER_POSTER_ACCESS_TOKEN_SECRET ? '✅ Set' : '❌ Missing')
-console.log('   NOSTR_PRIVATE_KEY:', process.env.NOSTR_PRIVATE_KEY ? '✅ Set' : '❌ Missing')
-
-// Collect all missing variables
-const missingVars = []
-if (!GIST_ID) missingVars.push('GIST_ID')
-if (!GIST_TOKEN) missingVars.push('GIST_TOKEN')
-if (!process.env.TWITTER_POSTER_API_KEY) missingVars.push('TWITTER_POSTER_API_KEY')
-if (!process.env.TWITTER_POSTER_API_KEY_SECRET) missingVars.push('TWITTER_POSTER_API_KEY_SECRET')
-if (!process.env.TWITTER_POSTER_ACCESS_TOKEN) missingVars.push('TWITTER_POSTER_ACCESS_TOKEN')
-if (!process.env.TWITTER_POSTER_ACCESS_TOKEN_SECRET) missingVars.push('TWITTER_POSTER_ACCESS_TOKEN_SECRET')
-if (!process.env.NOSTR_PRIVATE_KEY) missingVars.push('NOSTR_PRIVATE_KEY')
-
-// Fail if any variables are missing
-if (missingVars.length > 0) {
-  console.error('\n❌ CRITICAL ERROR: Missing required environment variables!')
-  console.error('   Missing:', missingVars.join(', '))
-  console.error('   Please set these secrets in GitHub repository settings.')
-  console.error('   Repository → Settings → Secrets and variables → Actions')
+// Debug: Check if GIST_ID and GIST_TOKEN are loaded
+if (!GIST_ID || !GIST_TOKEN) {
+  console.error('Missing GIST_ID or GIST_TOKEN!')
+  console.error('GIST_ID:', GIST_ID)
+  console.error('GIST_TOKEN:', GIST_TOKEN ? '[set]' : '[not set]')
   process.exit(1)
 }
 
 async function loadPostedCache() {
-  try {
-    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-      headers: { Authorization: `token ${GIST_TOKEN}` }
-    })
-    
-    if (!res.ok) {
-      const errorText = await res.text()
-      console.error('❌ Failed to fetch Gist!')
-      console.error('   Status:', res.status, res.statusText)
-      console.error('   GIST_ID:', GIST_ID)
-      console.error('   Response:', errorText)
-      
-      if (res.status === 404) {
-        console.error('   → Gist not found. Check if GIST_ID is correct.')
-      } else if (res.status === 401) {
-        console.error('   → Authentication failed. Check if GIST_TOKEN is valid.')
-      }
-      
-      throw new Error(`Failed to fetch Gist: ${res.status} ${res.statusText}`)
-    }
-    
-    const data = await res.json()
-    const content = data.files[GIST_FILENAME]?.content || ''
-    console.log('✅ Successfully loaded posted cache with', content.split('\n').filter(Boolean).length, 'entries')
-    return new Set(content.split('\n').map(l => l.trim()).filter(Boolean))
-  } catch (error) {
-    console.error('❌ Error in loadPostedCache:', error.message)
-    throw error
-  }
+  const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+    headers: { Authorization: `token ${GIST_TOKEN}` }
+  })
+  if (!res.ok) throw new Error('Failed to fetch Gist')
+  const data = await res.json()
+  const content = data.files[GIST_FILENAME]?.content || ''
+  return new Set(content.split('\n').map(l => l.trim()).filter(Boolean))
 }
 
 async function savePostedCache(postedSet) {
-  try {
-    const body = {
-      files: {
-        [GIST_FILENAME]: { content: Array.from(postedSet).join('\n') + '\n' }
-      }
+  const body = {
+    files: {
+      [GIST_FILENAME]: { content: Array.from(postedSet).join('\n') + '\n' }
     }
-    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `token ${GIST_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    })
-    
-    if (!res.ok) {
-      const errorText = await res.text()
-      console.error('❌ Failed to update Gist!')
-      console.error('   Status:', res.status, res.statusText)
-      console.error('   Response:', errorText)
-      throw new Error(`Failed to update Gist: ${res.status} ${res.statusText}`)
-    }
-    
-    console.log('✅ Successfully saved posted cache')
-  } catch (error) {
-    console.error('❌ Error in savePostedCache:', error.message)
-    throw error
   }
+  const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `token ${GIST_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  })
+  if (!res.ok) throw new Error('Failed to update Gist')
 }
 
 async function getRSSItems() {
@@ -282,21 +222,8 @@ async function postToTwitter({ title, link, author }) {
   const fullLink = link.endsWith('/r/deSign_r') ? link : link + '/r/deSign_r'
   let message = getRandomMessageFormat({ title, link: fullLink, author })
   if (message.length > 280) message = message.slice(0, 277) + '...'
-  
-  // Post tweet and verify it was created
-  const tweet = await client.v2.tweet(message)
-  
-  // Check if tweet was actually created
-  if (tweet && tweet.data && tweet.data.id) {
-    console.log('✅ Tweet posted successfully! ID:', tweet.data.id)
-    console.log('   Message:', message)
-    console.log('   View at: https://twitter.com/i/web/status/' + tweet.data.id)
-  } else {
-    console.error('⚠️  WARNING: Tweet API returned success but no tweet ID!')
-    console.error('   This usually means your Access Token lacks Write permissions.')
-    console.error('   Please regenerate your Access Token & Secret in Twitter Developer Portal.')
-    throw new Error('Tweet posted but no ID returned - check token permissions')
-  }
+  await client.v2.tweet(message)
+  console.log('Tweeted:', message)
 }
 
 async function postToNostr({ title, link, author }) {
@@ -316,31 +243,11 @@ async function postToNostr({ title, link, author }) {
       tags: [],
     })
     const py = spawn('python3', [scriptPath, entry])
-    
-    let noteId = ''
-    
-    py.stdout.on('data', data => {
-      const output = data.toString()
-      process.stdout.write(output)
-      
-      // Try to extract note ID from output
-      const noteMatch = output.match(/note1[a-z0-9]+/i)
-      if (noteMatch) {
-        noteId = noteMatch[0]
-      }
-    })
-    
+    py.stdout.on('data', data => process.stdout.write(data))
     py.stderr.on('data', data => process.stderr.write(data))
-    
     py.on('close', code => {
-      if (code === 0) {
-        if (noteId) {
-          console.log('   View on Nostr: https://njump.me/' + noteId)
-        }
-        resolve()
-      } else {
-        reject(new Error('nostr.py failed'))
-      }
+      if (code === 0) resolve()
+      else reject(new Error('nostr.py failed'))
     })
   })
 }
@@ -349,18 +256,8 @@ export async function runDBot() {
   const posted = await loadPostedCache()
   const items = await getRSSItems()
 
-  // ⭐ ADD THIS: Counter for posts processed
-  let postsProcessed = 0
-
   for (const item of items) {
     if (!item.link || posted.has(item.link)) continue
-    
-    // ⭐ ADD THIS: Check if we've reached the limit
-    if (postsProcessed >= MAX_POSTS_PER_RUN) {
-      console.log(`⏸️  Reached limit of ${MAX_POSTS_PER_RUN} posts for this run. Stopping to avoid rate limits.`)
-      break
-    }
-    
     let tweeted = false, nostrPosted = false
     try {
       await postToTwitter({ title: item.title, link: item.link, author: item.author })
@@ -368,13 +265,8 @@ export async function runDBot() {
     } catch (e) {
       if (e?.data?.detail?.includes('duplicate')) {
         console.log('Duplicate tweet, skipping X:', item.link)
-      } else if (e.message?.includes('no ID returned')) {
-        console.error('❌ CRITICAL: Twitter Access Token lacks Write permissions!')
-        console.error('   Go to Twitter Developer Portal → Regenerate Access Token & Secret')
-        console.error('   Then update GitHub secrets: TWITTER_POSTER_ACCESS_TOKEN and TWITTER_POSTER_ACCESS_TOKEN_SECRET')
       } else {
         console.error('Twitter error:', e)
-        console.error('Error details:', JSON.stringify(e, null, 2))
       }
     }
     try {
@@ -386,8 +278,6 @@ export async function runDBot() {
     if (tweeted || nostrPosted) {
       posted.add(item.link)
       await savePostedCache(posted)
-      // ⭐ ADD THIS: Increment counter only when successfully posted
-      postsProcessed++
     }
     // Wait 210 seconds before next post
     await new Promise(res => setTimeout(res, 210000))
