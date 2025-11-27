@@ -25,15 +25,22 @@ console.log('   TWITTER_POSTER_ACCESS_TOKEN:', process.env.TWITTER_POSTER_ACCESS
 console.log('   TWITTER_POSTER_ACCESS_TOKEN_SECRET:', process.env.TWITTER_POSTER_ACCESS_TOKEN_SECRET ? '✅ Set' : '❌ Missing')
 console.log('   NOSTR_PRIVATE_KEY:', process.env.NOSTR_PRIVATE_KEY ? '✅ Set' : '❌ Missing')
 
-if (!GIST_ID || !GIST_TOKEN) {
-  console.error('❌ Missing GIST_ID or GIST_TOKEN!')
-  process.exit(1)
-}
+// Collect all missing variables
+const missingVars = []
+if (!GIST_ID) missingVars.push('GIST_ID')
+if (!GIST_TOKEN) missingVars.push('GIST_TOKEN')
+if (!process.env.TWITTER_POSTER_API_KEY) missingVars.push('TWITTER_POSTER_API_KEY')
+if (!process.env.TWITTER_POSTER_API_KEY_SECRET) missingVars.push('TWITTER_POSTER_API_KEY_SECRET')
+if (!process.env.TWITTER_POSTER_ACCESS_TOKEN) missingVars.push('TWITTER_POSTER_ACCESS_TOKEN')
+if (!process.env.TWITTER_POSTER_ACCESS_TOKEN_SECRET) missingVars.push('TWITTER_POSTER_ACCESS_TOKEN_SECRET')
+if (!process.env.NOSTR_PRIVATE_KEY) missingVars.push('NOSTR_PRIVATE_KEY')
 
-if (!process.env.TWITTER_POSTER_API_KEY || !process.env.TWITTER_POSTER_API_KEY_SECRET || 
-    !process.env.TWITTER_POSTER_ACCESS_TOKEN || !process.env.TWITTER_POSTER_ACCESS_TOKEN_SECRET) {
-  console.error('❌ Missing Twitter API credentials!')
-  console.error('   Make sure all TWITTER_POSTER_* secrets are set in GitHub repository settings.')
+// Fail if any variables are missing
+if (missingVars.length > 0) {
+  console.error('\n❌ CRITICAL ERROR: Missing required environment variables!')
+  console.error('   Missing:', missingVars.join(', '))
+  console.error('   Please set these secrets in GitHub repository settings.')
+  console.error('   Repository → Settings → Secrets and variables → Actions')
   process.exit(1)
 }
 
@@ -309,11 +316,31 @@ async function postToNostr({ title, link, author }) {
       tags: [],
     })
     const py = spawn('python3', [scriptPath, entry])
-    py.stdout.on('data', data => process.stdout.write(data))
+    
+    let noteId = ''
+    
+    py.stdout.on('data', data => {
+      const output = data.toString()
+      process.stdout.write(output)
+      
+      // Try to extract note ID from output
+      const noteMatch = output.match(/note1[a-z0-9]+/i)
+      if (noteMatch) {
+        noteId = noteMatch[0]
+      }
+    })
+    
     py.stderr.on('data', data => process.stderr.write(data))
+    
     py.on('close', code => {
-      if (code === 0) resolve()
-      else reject(new Error('nostr.py failed'))
+      if (code === 0) {
+        if (noteId) {
+          console.log('   View on Nostr: https://njump.me/' + noteId)
+        }
+        resolve()
+      } else {
+        reject(new Error('nostr.py failed'))
+      }
     })
   })
 }
