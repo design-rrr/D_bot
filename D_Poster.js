@@ -15,39 +15,89 @@ const GIST_TOKEN = process.env.GIST_TOKEN
 // ⭐ ADD THIS: Limit posts per run to avoid Twitter rate limits
 const MAX_POSTS_PER_RUN = 2
 
-// Debug: Check if GIST_ID and GIST_TOKEN are loaded
+// Debug: Check if all required environment variables are loaded
+console.log('🔍 Environment Variables Check:')
+console.log('   GIST_ID:', GIST_ID ? '✅ Set' : '❌ Missing')
+console.log('   GIST_TOKEN:', GIST_TOKEN ? '✅ Set' : '❌ Missing')
+console.log('   TWITTER_POSTER_API_KEY:', process.env.TWITTER_POSTER_API_KEY ? '✅ Set' : '❌ Missing')
+console.log('   TWITTER_POSTER_API_KEY_SECRET:', process.env.TWITTER_POSTER_API_KEY_SECRET ? '✅ Set' : '❌ Missing')
+console.log('   TWITTER_POSTER_ACCESS_TOKEN:', process.env.TWITTER_POSTER_ACCESS_TOKEN ? '✅ Set' : '❌ Missing')
+console.log('   TWITTER_POSTER_ACCESS_TOKEN_SECRET:', process.env.TWITTER_POSTER_ACCESS_TOKEN_SECRET ? '✅ Set' : '❌ Missing')
+console.log('   NOSTR_PRIVATE_KEY:', process.env.NOSTR_PRIVATE_KEY ? '✅ Set' : '❌ Missing')
+
 if (!GIST_ID || !GIST_TOKEN) {
-  console.error('Missing GIST_ID or GIST_TOKEN!')
-  console.error('GIST_ID:', GIST_ID)
-  console.error('GIST_TOKEN:', GIST_TOKEN ? '[set]' : '[not set]')
+  console.error('❌ Missing GIST_ID or GIST_TOKEN!')
+  process.exit(1)
+}
+
+if (!process.env.TWITTER_POSTER_API_KEY || !process.env.TWITTER_POSTER_API_KEY_SECRET || 
+    !process.env.TWITTER_POSTER_ACCESS_TOKEN || !process.env.TWITTER_POSTER_ACCESS_TOKEN_SECRET) {
+  console.error('❌ Missing Twitter API credentials!')
+  console.error('   Make sure all TWITTER_POSTER_* secrets are set in GitHub repository settings.')
   process.exit(1)
 }
 
 async function loadPostedCache() {
-  const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-    headers: { Authorization: `token ${GIST_TOKEN}` }
-  })
-  if (!res.ok) throw new Error('Failed to fetch Gist')
-  const data = await res.json()
-  const content = data.files[GIST_FILENAME]?.content || ''
-  return new Set(content.split('\n').map(l => l.trim()).filter(Boolean))
+  try {
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      headers: { Authorization: `token ${GIST_TOKEN}` }
+    })
+    
+    if (!res.ok) {
+      const errorText = await res.text()
+      console.error('❌ Failed to fetch Gist!')
+      console.error('   Status:', res.status, res.statusText)
+      console.error('   GIST_ID:', GIST_ID)
+      console.error('   Response:', errorText)
+      
+      if (res.status === 404) {
+        console.error('   → Gist not found. Check if GIST_ID is correct.')
+      } else if (res.status === 401) {
+        console.error('   → Authentication failed. Check if GIST_TOKEN is valid.')
+      }
+      
+      throw new Error(`Failed to fetch Gist: ${res.status} ${res.statusText}`)
+    }
+    
+    const data = await res.json()
+    const content = data.files[GIST_FILENAME]?.content || ''
+    console.log('✅ Successfully loaded posted cache with', content.split('\n').filter(Boolean).length, 'entries')
+    return new Set(content.split('\n').map(l => l.trim()).filter(Boolean))
+  } catch (error) {
+    console.error('❌ Error in loadPostedCache:', error.message)
+    throw error
+  }
 }
 
 async function savePostedCache(postedSet) {
-  const body = {
-    files: {
-      [GIST_FILENAME]: { content: Array.from(postedSet).join('\n') + '\n' }
+  try {
+    const body = {
+      files: {
+        [GIST_FILENAME]: { content: Array.from(postedSet).join('\n') + '\n' }
+      }
     }
+    const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `token ${GIST_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    })
+    
+    if (!res.ok) {
+      const errorText = await res.text()
+      console.error('❌ Failed to update Gist!')
+      console.error('   Status:', res.status, res.statusText)
+      console.error('   Response:', errorText)
+      throw new Error(`Failed to update Gist: ${res.status} ${res.statusText}`)
+    }
+    
+    console.log('✅ Successfully saved posted cache')
+  } catch (error) {
+    console.error('❌ Error in savePostedCache:', error.message)
+    throw error
   }
-  const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `token ${GIST_TOKEN}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
-  })
-  if (!res.ok) throw new Error('Failed to update Gist')
 }
 
 async function getRSSItems() {
