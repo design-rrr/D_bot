@@ -34,19 +34,23 @@ class NostrPoster:
     def post(self, entry):
         link = entry.get('link')
         if not link:
-            print("No link in entry, skipping.")
+            print("[nostr.py] No link in entry, skipping.")
             return False
         
         try:
             out_str = self.build_nostr_entry(entry)
+            print(f"[nostr.py] Signing event for {entry.get('title', '?')}...")
             event = Event(out_str)
             event.sign(self.pk.hex())
+            print(f"[nostr.py] Publishing to {len(self.relays)} relays...")
+            t0 = time.time()
             self.relay_manager.publish_event(event)
             self.relay_manager.run_sync()
-            print(f"Posted to Nostr: {out_str}")
+            elapsed = time.time() - t0
+            print(f"[nostr.py] Published OK ({elapsed:.1f}s)")
             return True
         except Exception as e:
-            print(f"Submitting to Nostr failed: {e}")
+            print(f"[nostr.py] Failed: {e}")
             return False
 
     def close(self):

@@ -14,25 +14,33 @@ const GIST_FILENAME = 'posted.txt'
 const GIST_TOKEN = process.env.GIST_TOKEN
 const POST_INTERVAL_MS = parseInt(process.env.POST_INTERVAL_MS || '210000', 10)
 
-// Debug: Check if GIST_ID and GIST_TOKEN are loaded
+function log(msg, ...args) {
+  const ts = new Date().toISOString().replace('T', ' ').slice(0, 19)
+  console.log(`[${ts}] ${msg}`, ...args)
+}
+
 if (!GIST_ID || !GIST_TOKEN) {
-  console.error('Missing GIST_ID or GIST_TOKEN!')
-  console.error('GIST_ID:', GIST_ID)
-  console.error('GIST_TOKEN:', GIST_TOKEN ? '[set]' : '[not set]')
+  log('❌ Missing GIST_ID or GIST_TOKEN!')
+  log('   GIST_ID: %s', GIST_ID || '(empty)')
+  log('   GIST_TOKEN: %s', GIST_TOKEN ? '[set]' : '[not set]')
   process.exit(1)
 }
 
 async function loadPostedCache() {
+  log('Loading posted cache from Gist...')
   const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
     headers: { Authorization: `token ${GIST_TOKEN}` }
   })
-  if (!res.ok) throw new Error('Failed to fetch Gist')
+  if (!res.ok) throw new Error(`Failed to fetch Gist: ${res.status}`)
   const data = await res.json()
   const content = data.files[GIST_FILENAME]?.content || ''
-  return new Set(content.split('\n').map(l => l.trim()).filter(Boolean))
+  const links = content.split('\n').map(l => l.trim()).filter(Boolean)
+  log('Loaded %d already-posted links from Gist', links.length)
+  return new Set(links)
 }
 
 async function savePostedCache(postedSet) {
+  log('Saving posted cache to Gist (%d links)', postedSet.size)
   const body = {
     files: {
       [GIST_FILENAME]: { content: Array.from(postedSet).join('\n') + '\n' }
@@ -46,26 +54,31 @@ async function savePostedCache(postedSet) {
     },
     body: JSON.stringify(body)
   })
-  if (!res.ok) throw new Error('Failed to update Gist')
+  if (!res.ok) throw new Error(`Failed to update Gist: ${res.status}`)
+  log('Gist updated OK')
 }
 
 async function getRSSItems() {
+  log('Fetching RSS from %s', RSS_URL)
   const res = await fetch(RSS_URL)
   if (!res.ok) throw new Error(`RSS fetch failed: ${res.status} ${res.statusText}`)
   const xml = await res.text()
+  log('RSS response: %d bytes', xml.length)
   const parser = new XMLParser({
     ignoreAttributes: false,
     isArray: (tagName) => tagName === 'item',
   })
   const data = parser.parse(xml)
-  const items = data?.rss?.channel?.item || []
-  return items.map(item => ({
+  const items = (data?.rss?.channel?.item || []).map(item => ({
     link: item?.guid?.trim() || null,
     title: item?.title?.trim() || null,
     author: item?.['atom:author']?.['atom:name']?.trim()
       || item?.author?.name?.trim()
       || 'Someone',
   })).filter(item => item.link && item.title)
+  log('RSS items found: %d', items.length)
+  items.forEach((item, i) => log('  [%d] %s — by %s', i + 1, item.title, item.author))
+  return items
 }
 
 function getRandomTwitterFormat({ title, link, author }) {
@@ -123,7 +136,11 @@ function getRandomNostrFormat({ title, link, author }) {
 }
 
 async function postToTwitter({ title, link, author }) {
-  if (!process.env.TWITTER_POSTER_API_KEY) return console.log('Twitter not configured')
+  if (!process.env.TWITTER_POSTER_API_KEY) {
+    log('Twitter not configured — skipping')
+    return
+  }
+  log('Posting to Twitter: "%s" by %s', title, author)
   const client = new TwitterApi({
     appKey: process.env.TWITTER_POSTER_API_KEY,
     appSecret: process.env.TWITTER_POSTER_API_KEY_SECRET,
@@ -134,14 +151,17 @@ async function postToTwitter({ title, link, author }) {
   const fullLink = link.endsWith('/r/deSign_r') ? link : link + '/r/deSign_r'
   let message = getRandomTwitterFormat({ title, link: fullLink, author })
   if (message.length > 280) message = message.slice(0, 277) + '...'
+  const t0 = Date.now()
   await client.v2.tweet(message)
-  console.log('Tweeted:', message)
+  log('Tweeted (%dms): %s', Date.now() - t0, message)
 }
 
 async function postToNostr({ title, link, author }) {
+  log('Posting to Nostr: "%s" by %s', title, author)
   const __dirname = dirname(fileURLToPath(import.meta.url))
   const scriptPath = resolve(__dirname, 'nostr.py')
   const NOSTR_TIMEOUT_MS = parseInt(process.env.NOSTR_TIMEOUT_MS || '60000', 10)
+  const t0 = Date.now()
   return new Promise((resolve, reject) => {
     const fullLink = link.endsWith('/r/deSign_r') ? link : link + '/r/deSign_r'
     const message = getRandomNostrFormat({ title, link: fullLink, author })
@@ -152,8 +172,10 @@ async function postToNostr({ title, link, author }) {
       message,
       tags: [],
     })
+    log('Spawning nostr.py (timeout: %dms)', NOSTR_TIMEOUT_MS)
     const py = spawn('python3', [scriptPath, entry])
     const timer = setTimeout(() => {
+      log('Nostr subprocess timed out after %dms — killing', NOSTR_TIMEOUT_MS)
       py.kill()
       reject(new Error('nostr.py timed out'))
     }, NOSTR_TIMEOUT_MS)
@@ -161,6 +183,7 @@ async function postToNostr({ title, link, author }) {
     py.stderr.on('data', data => process.stderr.write(data))
     py.on('close', code => {
       clearTimeout(timer)
+      log('nostr.py exited with code %d (%dms)', code, Date.now() - t0)
       if (code === 0) resolve()
       else reject(new Error('nostr.py failed'))
     })
@@ -168,13 +191,25 @@ async function postToNostr({ title, link, author }) {
 }
 
 export async function runDBot() {
+  const tStart = Date.now()
+  log('=== D_Bot v0.3 starting ===')
+  log('Config: POST_INTERVAL_MS=%d, NOSTR_TIMEOUT_MS=%s',
+    POST_INTERVAL_MS, process.env.NOSTR_TIMEOUT_MS || '60000 (default)')
+
   const posted = await loadPostedCache()
   const items = await getRSSItems()
 
+  let postedCount = 0, skippedOwner = 0, skippedPosted = 0
+
   for (const item of items) {
-    if (!item.link || posted.has(item.link)) continue
+    if (!item.link || posted.has(item.link)) {
+      skippedPosted++
+      log('⏭ Already posted: "%s" by %s', item.title, item.author)
+      continue
+    }
     if (item.author?.toLowerCase() === 'design_r') {
-      console.log(`Skipping @${item.author} post (bot owner): ${item.title}`)
+      skippedOwner++
+      log('⏭ Bot owner skip: "%s" by @%s', item.title, item.author)
       continue
     }
     let tweeted = false, nostrPosted = false
@@ -183,24 +218,28 @@ export async function runDBot() {
       tweeted = true
     } catch (e) {
       if (e?.data?.detail?.includes('duplicate')) {
-        console.log('Duplicate tweet, skipping X:', item.link)
+        log('Duplicate tweet: %s', item.link)
       } else {
-        console.error('Twitter error:', e)
+        log('Twitter error: %s', e.message || e)
       }
     }
     try {
       await postToNostr({ title: item.title, link: item.link, author: item.author })
       nostrPosted = true
     } catch (e) {
-      console.error('Nostr error:', e)
+      log('Nostr error: %s', e.message || e)
     }
     if (tweeted || nostrPosted) {
       posted.add(item.link)
       await savePostedCache(posted)
+      postedCount++
     }
+    log('Waiting %dms before next item...', POST_INTERVAL_MS)
     await new Promise(res => setTimeout(res, POST_INTERVAL_MS))
   }
-  console.log('✅ Done.')
+  const elapsed = ((Date.now() - tStart) / 1000).toFixed(1)
+  log('=== Done in %ss ===', elapsed)
+  log('Total: %d posted, %d already posted, %d owner-skipped', postedCount, skippedPosted, skippedOwner)
 }
 
 if (process.argv[1].includes('D_Poster.js')) {
