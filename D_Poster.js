@@ -4,6 +4,7 @@ import { TwitterApi } from 'twitter-api-v2'
 import { spawn } from 'child_process'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
+import { XMLParser } from 'fast-xml-parser'
 
 dotenv.config()
 
@@ -11,6 +12,7 @@ const RSS_URL = 'https://stacker.news/~Design/rss'
 const GIST_ID = process.env.GIST_ID
 const GIST_FILENAME = 'posted.txt'
 const GIST_TOKEN = process.env.GIST_TOKEN
+const POST_INTERVAL_MS = parseInt(process.env.POST_INTERVAL_MS || '210000', 10)
 
 // Debug: Check if GIST_ID and GIST_TOKEN are loaded
 if (!GIST_ID || !GIST_TOKEN) {
@@ -49,165 +51,75 @@ async function savePostedCache(postedSet) {
 
 async function getRSSItems() {
   const res = await fetch(RSS_URL)
+  if (!res.ok) throw new Error(`RSS fetch failed: ${res.status} ${res.statusText}`)
   const xml = await res.text()
-  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)]
-  return items.map(m => {
-    const block = m[1]
-    const link = block.match(/<guid>(.*?)<\/guid>/)?.[1]?.trim()
-    const title = block.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.trim()
-    const author = block.match(/<atom:author>[\s\S]*?<atom:name>([\s\S]*?)<\/atom:name>[\s\S]*?<\/atom:author>/)?.[1]?.trim()
-      || block.match(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/)?.[1]?.trim()
-      || 'Someone'
-    return { link, title, author }
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    isArray: (tagName) => tagName === 'item',
   })
+  const data = parser.parse(xml)
+  const items = data?.rss?.channel?.item || []
+  return items.map(item => ({
+    link: item?.guid?.trim() || null,
+    title: item?.title?.trim() || null,
+    author: item?.['atom:author']?.['atom:name']?.trim()
+      || item?.author?.name?.trim()
+      || 'Someone',
+  })).filter(item => item.link && item.title)
 }
 
-function getRandomMessageFormat({ title, link, author }) {
+function getRandomTwitterFormat({ title, link, author }) {
   const formats = [
-   // 1. Original
-    () => `@${author} just posted \"${title}\". Triggering #DesignThinking. Read more ${link}`,
-    // 2. Variation 2
-    () => `You should not miss @${author} posting \"${title}\"... #DesignInspiration. Click ${link}`,
-    // 3. Variation 3
-    () => `This is really an active post \"${title}\" by @${author} in #Design. Join in at ${link}`,
-    // 4. Variation 4
-    () => `Curious to know about \"${title}\" by @${author} in #Design, triggeting #creativity. Learn more ${link}`,
-
-   // 1. Creative mastery & artistic focus
-  () => `@${author} shares \"${title}\" - another step toward #creative mastery. Explore #design & #innovation: ${link}`,
-
-  // 2. Design innovation angle  
-  () => `New creation from @${author}: \"${title}\". Crafting the future of visual expression. Discover #design & #creativity. ${link}`,
-  
-  // 3. Minimalist design theme
-  () => `@${author} contributes \"${title}\" to the minimal conversation. Less is more, #simplicity is law. #KISS Experience with #designThinking & #creativity: ${link}`,
-    
-  // 4. Artistic craftsmanship emphasis
-  () => `\"${title}\" by @${author} - because authentic #creativity isn't negotiable, that's the true #art of #design. ${link}`,
-  
-  // 5. Traditional design ethos
-  () => `@${author} drops wisdom: \"${title}\". #Timeless principles in action. Embrace the #creative #designCommunity on #StackerNews. ${link}`,
-  
-  // 6. Creative rebellion
-  () => `New vision from @${author}: \"${title}\". Building unforgettable #experiences, one #design at a time with #creativity. ${link}`,
-
-  // 7. Design activism
-  () => `@${author} presents \"${title}\" - the future belongs to those who create it. Beautiful work of #design & #creativity. ${link}`,
-
-  // 8. Creative sovereignty
-  () => `\"${title}\" crafted by @${author}. Breaking conventions apart, one #design at a time, with #creativity. ${link}`,
-
-  // 9. Seasonal design focus
-  () => `@${author} unveils \"${title}\" - embracing inspiration. Marvel #design & #creativity: ${link}`,
-
-  // 10. Design innovation
-  () => `Fresh approach from @${author}: \"${title}\". Revolutionizing the #creative landscape. Discover #design & #creativity; ${link}`,
-
-  // 11. Color mastery theme
-  () => `@${author} colors the world with \"${title}\" - with passion. See the magic of #design & #creativity. ${link}`,
-
-  // 12. Typography craft
-  () => `\"${title}\" by @${author} - because good things speaks volumes without words. Experience clarity with #design & #creativity: ${link}`,
-
-  // 13. Street art culture
-  () => `@${author} brings wisdom: \"${title}\". Authentic at its finest. Get inspired by its #designThinking: ${link}`,
-
-  // 14. Digital art fusion
-  () => `New experiment from @${author}: \"${title}\". Technology meets beauty. Mind-bending #design & #creativity: ${link}`,
-
-  // 15. Retro design revival
-  () => `@${author} revives nostalgia with \"${title}\" - never looked so fresh. Feel inspired by its #designInspiration & #creativity: ${link}`,
-
-  // 16. Sustainable design
-  () => `\"${title}\" crafted by @${author}. Waste nothing purposefully. Conscious creation for #design & #creativity. ${link}`,
-  
-  // 17. Bold and experimental
-  () => `@${author} pushes boundaries with \"${title}\" - where #bold becomes beautiful. Ignite your imagination, #design & #creativity: ${link}`,
-  
-  // 18. User experience focus
-  () => `Fresh insight from @${author}: \"${title}\". The ancient arts lives on. Explore #design & #creativity: ${link}`,
-  
-  // 19. Brand identity perfection
-  () => `@${author} shapes \"${title}\" - crafts tells stories. Connect with purpose, #designtips & #creativity: ${link}`,
-
-  // 20. Design thinking
-  () => `\"${title}\" conceived by @${author} - capturing #ideas in visual form. Brilliant thinking awaits #design & #creativity: ${link}`,
-
-  // 21. Motion design magic
-  () => `@${author} shares \"${title}\" - bringing beauty to life. Dynamic #design & #creativity. ${link}`,
-
-  // 22. Illustration artistry
-  () => `Insight from @${author}: \"${title}\". Growing your soul. A bliss for #creative #design: ${link}`,
-
-  // 23. Web design alchemy
-  () => `@${author} codes \"${title}\" - digital #alchemy in browser windows. #design & #creativity at work:  ${link}`,
-
-  // 24. Print design mastery
-  () => `\"${title}\" typed by @${author}. Starting conversations with brilliance always works. Tasteful #design & #creativity: ${link}`,
-
-  // 25. Photography composition
-  () => `@${author} captures life with \"${title}\" - where words becomes sculpture, framing responsibly with #design & #creativity: ${link}`,
-
-  // 26. Packaging innovation
-  () => `Smart one from @${author}: \"${title}\". Protects what words cannot. Function meets #designtips & #creativity: ${link}`,
-
-  // 27. Logo design mastery
-  () => `@${author} symbolizes \"${title}\" - taming #ideas for perfect marks. Identify #design #thinking: ${link}`,
-
-  // 28. Design tools focus
-  () => `\"${title}\" crafted by @${author}. Sharp #tools, sharper techniques, sharpest results. Precision work for #design & #creativity: ${link}`,
-
-  // 29. Creative process
-  () => `@${author} documents \"${title}\" - every #process tells #creative stories. Behind the scenes of #design & #creativity. ${link}`,
-
-  // 30. Design inspiration
-  () => `Inspiring work from @${author}: \"${title}\". #Inspiration connects minds across centuries with #creative #design. ${link}`,
-
-  // 31. Product design craft
-  () => `@${author} craft \"${title}\" - respecting every #function with purpose, improving #designtips & #creativity. ${link}`,
-
-  // 32. Design trends
-  () => `\"${title}\" by @${author}. Modern #trends meet timeless principles. Stylish evolution for #design & #creativity: ${link}`,
-
-  // 33. Creative collaboration
-  () => `@${author} shares \"${title}\" - in perfect harmony. Magic for #design & #creativity: ${link}`,
-
-  // 34. Visual storytelling
-  () => `Fresh from @${author}: \"${title}\". #Stories are visual journeys on screens. A Narrative for #designtips & #creativity. ${link}`,
-    
-  // 35. Design critique wisdom
-  () => `@${author} analyzes \"${title}\" - where #critique meets growth in harmony. Perfect feedback for #designer & #creative #people:  ${link}`,
-
-  // 36. Creative revelation
-  () => `\"${title}\" revealed by @${author}. Inspiration transforms hidden beauty. Pure brilliance for #design & #creativity.  ${link}`,
-
-  // 37. Design research
-  () => `@${author} researches \"${title}\" - evidence-based #design tells informed stories. Data-driven beauty to #inspire #creativity:  ${link}`,
-
-  // 38. Prototyping techniques
-  () => `Wisdom from @${author}: \"${title}\". Fast and loose #prototyping builds character. Progress revealed for #designtips & #creativity. ${link}`,
-
-  // 39. Design systems
-  () => `@${author} posted \"${title}\" - where #consistency meets scalable #creativity. Organized beauty for #designThinking. ${link}`,
-
-  // 40. Creative fusion
-  () => `\"${title}\" fused by @${author}. Disciplines collide, creating #innovation magic in #pixels. Boundary breaking #design & #creativity. ${link} `,
-
-  // 41. Aesthetic exploration
-  () => `@${author} explores \"${title}\" - chasing the perfect #aesthetic through depths. Visual secrets for #design & #creativity. ${link}`,
-  
-  // 42. Design presentation
-  () => `Vision from @${author}: \"${title}\". #Presentation transforms ideas into poetry. Persuasive #art for #designer & #cretive #brains. ${link}`,
-
-  // 43. Creative morning routine
-  () => `@${author} starts with \"${title}\" - morning wrapped in inspired dreams. Fresh perspective for #minimalism #designer:  ${link}`,
-
-    // 44. Late night designing
-  () => `\"${title}\" by @${author} for midnight #inspiration that demands expression. #Creative dedication for #designCommunity ${link}` 
-
+    () => `\"${title}\" by ${author} — good stuff for anyone into design. ${link} #DesignTwitter`,
+    () => `This one's worth a look — \"${title}\" by ${author}. Really nice thinking here. ${link} #DesignThinking`,
+    () => `${author} shared \"${title}\" — interesting read for designers. ${link} #UIUX`,
+    () => `\"${title}\" from ${author} caught my eye. Check it out. ${link} #GraphicDesign`,
+    () => `Found this: \"${title}\" by ${author}. Always enjoy seeing what people create. ${link} #CreativeProcess`,
+    () => `Just read \"${title}\" by ${author} — some solid insights. ${link} #WebDesign`,
+    () => `\"${title}\" is a good one from ${author}. Worth a few minutes. ${link} #DesignTwitter`,
+    () => `${author} posted \"${title}\" and honestly, it's really well done. ${link} #Typography`,
+    () => `\"${title}\" from ${author}. Clean, thoughtful, worth sharing. ${link} #Branding`,
+    () => `Liking \"${title}\" by ${author}. Solid perspective on design. ${link} #DesignThinking`,
+    () => `${author} on Stacker News with \"${title}\" — nice read. ${link} #UIUX`,
+    () => `\"${title}\" by ${author} — great design thinking in here. ${link} #GraphicDesign`,
+    () => `${author} just dropped \"${title}\". Worth your time if you're into design. ${link} #DesignTwitter`,
+    () => `Scrolling and found \"${title}\" by ${author}. Really liked this one. ${link} #CreativeProcess`,
+    () => `\"${title}\" by ${author} — simple, clean, well done. ${link} #WebDesign`,
+    () => `Digging \"${title}\" by ${author}. Really clean design thinking. ${link} #DesignTwitter`,
+    () => `\"${title}\" from ${author} — this is the kind of design content I like seeing. ${link} #Typography`,
+    () => `${author} with \"${title}\" — short read, good insights. ${link} #GraphicDesign`,
+    () => `\"${title}\" by ${author}. Nice work, worth a look. ${link} #Branding`,
+    () => `${author} writes about \"${title}\" — some great takeaways here. ${link} #DesignThinking`,
+    () => `Spotted \"${title}\" by ${author} on Stacker News. Really enjoyed it. ${link} #UIUX`,
   ]
-  const idx = Math.floor(Math.random() * formats.length)
-  return formats[idx]()
+  return formats[Math.floor(Math.random() * formats.length)]()
+}
+
+function getRandomNostrFormat({ title, link, author }) {
+  const formats = [
+    () => `Came across \"${title}\" by ${author} on Stacker News and thought it was worth sharing. Great design thinking in this one. Check it out: ${link} #design #creativity #grownostr`,
+    () => `${author} just shared \"${title}\" and it's a solid read for anyone into design. Always refreshing to see people put real thought into their work. ${link} #design #art #designstr`,
+    () => `If you're into design, you'll want to see \"${title}\" by ${author}. Some really nice ideas and execution here. ${link} #creativity #nostr #design`,
+    () => `Been reading \"${title}\" from ${author} — lots to take away from this one. Sharing for anyone interested in thoughtful design. ${link} #design #grownostr #creative`,
+    () => `\"${title}\" by ${author} is one of those posts that makes you stop and think. Worth a read. ${link} #design #art #plebchain #creativity`,
+    () => `Really enjoyed \"${title}\" by ${author}. Clean insights, well presented. This is the kind of content I love seeing. ${link} #design #grownostr #nostr`,
+    () => `${author} dropped \"${title}\" and it's full of good ideas. If design is your thing, don't skip this one. ${link} #designstr #creativity #art`,
+    () => `Some posts just hit different — \"${title}\" by ${author} is one of them. Great perspective on design. ${link} #design #grownostr #plebchain`,
+    () => `\"${title}\" — a thoughtful piece from ${author}. Love seeing the design community share real, practical insights. ${link} #creativity #design #nostr`,
+    () => `${author} wrote \"${title}\" and honestly it's one of the better design posts I've seen lately. Give it a look. ${link} #design #art #grownostr #designstr`,
+    () => `Found a good one: \"${title}\" by ${author}. Really well thought out. Sharing it here for the design crowd. ${link} #design #creativity #nostr #plebchain`,
+    () => `\"${title}\" from ${author} is worth your time. Clean design thinking, well presented. ${link} #art #designstr #grownostr`,
+    () => `${author} posted \"${title}\" and it resonated. Good design always stands out. ${link} #design #grownostr #creativity #art`,
+    () => `Reading through \"${title}\" by ${author} — some genuinely useful insights for designers. ${link} #design #nostr #designstr`,
+    () => `\"${title}\" by ${author}. Solid work, worth sharing with this community. ${link} #plebchain #design #grownostr #creativity`,
+    () => `Stumbled on \"${title}\" by ${author} and wanted to pass it along. Good design thinking never gets old. ${link} #design #creativity #grownostr`,
+    () => `\"${title}\" from ${author} is a great example of thoughtful design. Really enjoyed this one. ${link} #art #designstr #nostr`,
+    () => `${author} shared \"${title}\" and it's well worth your time. Clean, considered, well executed. ${link} #design #plebchain #grownostr`,
+    () => `Reading \"${title}\" by ${author} — this is what good design looks like. Sharing for the creative minds here. ${link} #creativity #design #nostr #art`,
+    () => `\"${title}\" by ${author} caught my attention. Some genuinely refreshing ideas in here. ${link} #design #grownostr #designstr`,
+    () => `${author} on Stacker News with \"${title}\". Always appreciate when people share real design knowledge. ${link} #nostr #design #creativity`,
+  ]
+  return formats[Math.floor(Math.random() * formats.length)]()
 }
 
 async function postToTwitter({ title, link, author }) {
@@ -220,21 +132,19 @@ async function postToTwitter({ title, link, author }) {
   })
   
   const fullLink = link.endsWith('/r/deSign_r') ? link : link + '/r/deSign_r'
-  let message = getRandomMessageFormat({ title, link: fullLink, author })
+  let message = getRandomTwitterFormat({ title, link: fullLink, author })
   if (message.length > 280) message = message.slice(0, 277) + '...'
   await client.v2.tweet(message)
   console.log('Tweeted:', message)
 }
 
 async function postToNostr({ title, link, author }) {
-  // Always resolve nostr.py relative to this file (project root)
   const __dirname = dirname(fileURLToPath(import.meta.url))
   const scriptPath = resolve(__dirname, 'nostr.py')
+  const NOSTR_TIMEOUT_MS = parseInt(process.env.NOSTR_TIMEOUT_MS || '60000', 10)
   return new Promise((resolve, reject) => {
-    // Append /r/deSign_r to the link
     const fullLink = link.endsWith('/r/deSign_r') ? link : link + '/r/deSign_r'
-    // Use the same random message format for Nostr as for Twitter
-    const message = getRandomMessageFormat({ title, link: fullLink, author })
+    const message = getRandomNostrFormat({ title, link: fullLink, author })
     const entry = JSON.stringify({
       title,
       link: fullLink,
@@ -243,9 +153,14 @@ async function postToNostr({ title, link, author }) {
       tags: [],
     })
     const py = spawn('python3', [scriptPath, entry])
+    const timer = setTimeout(() => {
+      py.kill()
+      reject(new Error('nostr.py timed out'))
+    }, NOSTR_TIMEOUT_MS)
     py.stdout.on('data', data => process.stdout.write(data))
     py.stderr.on('data', data => process.stderr.write(data))
     py.on('close', code => {
+      clearTimeout(timer)
       if (code === 0) resolve()
       else reject(new Error('nostr.py failed'))
     })
@@ -283,8 +198,7 @@ export async function runDBot() {
       posted.add(item.link)
       await savePostedCache(posted)
     }
-    // Wait 210 seconds before next post
-    await new Promise(res => setTimeout(res, 210000))
+    await new Promise(res => setTimeout(res, POST_INTERVAL_MS))
   }
   console.log('✅ Done.')
 }

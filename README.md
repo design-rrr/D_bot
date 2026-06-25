@@ -1,24 +1,28 @@
 # D_Bot 🤖 
-`v0.2`
-Just another Node.js bot that automatically cross-posts design-related content from Stacker News/[~Design](https://stacker.news/~Design/r/deSign_r) to [Twitter](https://x.com/DeSign__r) and [Nostr](https://iris.to/deSign_r), tagging authors if they include their handles. Helping spread design inspiration across multiple social platforms, one note at time.
+`v0.3`
+
+A Node.js + Python bot that cross-posts design content from [Stacker News ~Design](https://stacker.news/~Design/r/deSign_r) to [Twitter (X)](https://x.com/DeSign__r) and [Nostr](https://iris.to/deSign_r), with human-friendly messaging and separate templates per platform.
 
 ![75659 copy](https://github.com/user-attachments/assets/6de4e3eb-5c98-4149-813e-090f3ed59c23)
 
 ## 🚀 Features
 
-- **Multi-Platform Posting**: Automatically posts to Twitter and Nostr
-- **Stacker News Integration**: Monitors Stacker News for #Design tagged posts
-- **Real-time Updates**: Uses WebSocket connections for live content monitoring
-- **Rate Limit Handling**: Gracefully handles Twitter API rate limits
+- **Multi-Platform Posting**: Automatically posts to Twitter and Nostr with platform-specific templates
+- **Stacker News Integration**: Monitors Stacker News ~Design sub-community via RSS
+- **Scheduled Updates**: Runs on GitHub Actions cron (default: every 3 hours)
+- **Bot Owner Filter**: Automatically skips posts by @deSign_r to avoid self-sharing
+- **Human-Friendly Templates**: Separate pools of 21 hand-written templates per platform, using relevant hashtags
+- **XML Parsing**: Proper RSS parsing with `fast-xml-parser` instead of fragile regex
+- **Timeout Handling**: Configurable timeout for Nostr publishing (default 60s)
+- **Error Resilience**: Gracefully handles Twitter rate limits, duplicate tweets, and network failures
 
 ## 📋 Prerequisites
 
 Before running D_Bot, you'll need:
 
 - Node.js (v18 or higher)
-- Twitter API v2 credentials (Bearer Token, API Key, API Secret, Access Token, Access Token Secret)
+- Twitter API v2 credentials (API Key, API Secret, Access Token, Access Token Secret)
 - Nostr private key for posting. get yours from [Nstart.me](https://nstart.me/)
-- Stacker News API access
 
 ## 🛠️ Installation
 
@@ -37,20 +41,26 @@ Before running D_Bot, you'll need:
    Create a `.env` file in the root directory:
    ```env
    # Twitter API Credentials
-   TWITTER_API_KEY=your_api_key
-   TWITTER_API_SECRET=your_api_secret
-   TWITTER_ACCESS_TOKEN=your_access_token
-   TWITTER_ACCESS_TOKEN_SECRET=your_access_token_secret
+   TWITTER_POSTER_API_KEY=your_api_key
+   TWITTER_POSTER_API_KEY_SECRET=your_api_secret
+   TWITTER_POSTER_ACCESS_TOKEN=your_access_token
+   TWITTER_POSTER_ACCESS_TOKEN_SECRET=your_access_token_secret
 
-   # Secret Gist for posted.txt https://gist.github.com/design-rrr/063424572d66de647fa17d791bae5617
+   # GitHub Gist (for cross-run dedup) https://gist.github.com/design-rrr/063424572d66de647fa17d791bae5617
    GIST_ID=063424572d66de647fa17d791bae5617
-   GIST_TOKEN=generated without ghp_ from https://github.com/settings/tokens
-   
+   GIST_TOKEN=your_token_here
+
    # Nostr Configuration
    NOSTR_PRIVATE_KEY=your_nostr_private_key
-   
-   # Server Configuration
-   PORT=10000
+
+   # Optional: post interval in ms (default 210000)
+   # POST_INTERVAL_MS=210000
+
+   # Optional: Nostr subprocess timeout in ms (default 60000)
+   # NOSTR_TIMEOUT_MS=60000
+
+   # Optional: npm registry mirror (for GitHub Actions in China)
+   # NPM_REGISTRY_MIRROR=https://registry.npmmirror.com
    ```
 
 ## 🏃‍♂️ Running the Bot
@@ -70,10 +80,14 @@ The bot is configured for deployment with the following settings:
 
 ```
 D_Bot/
-├── D_Poster.js          # Main application file
+├── D_Poster.js          # Main application (Node.js)
+├── nostr.py             # Nostr publishing module (Python)
 ├── package.json         # Node.js dependencies
+├── requirements.txt     # Python dependencies
+├── posted.txt           # Local cache of posted links
 ├── .env                 # Environment variables (not in repo)
-└── README.md           # This file
+├── .github/workflows/   # GitHub Actions CI/CD
+└── README.md            # This file
 ```
 
 ## 🔧 Configuration
@@ -92,36 +106,33 @@ D_Bot/
 ### Rate Limits
 - **Twitter Basic Plan**: 17 tweets per 24 hours
 - **Twitter Basic Paid**: 10,000 tweets per month
-- The bot includes automatic rate limit handling
+- The bot includes automatic error handling
 
 ## 📊 How It Works
 
-1. **Monitoring**: The bot connects to Stacker News via WebSocket
-2. **Filtering**: Monitors for new posts tagged with #Design
-3. **Processing**: Extracts post title, author, and link
-4. **Cross-posting**: 
-   - Posts to Nostr with formatted message
-   - Posts to Twitter (if not rate limited)
-5. **Error Handling**: Gracefully handles API errors and rate limits
+1. **Monitoring**: Fetches the Stacker News ~Design RSS feed
+2. **Filtering**: Skips already-posted items and posts authored by @deSign_r
+3. **Processing**: Extracts post title, author, and link via XML parser
+4. **Templating**: Picks a random human-friendly template — short for Twitter (1 hashtag), conversational for Nostr (3–4 hashtags)
+5. **Cross-posting**: Posts to Nostr via Python subprocess, then to Twitter (if configured)
+6. **Persistence**: Saves posted links to a GitHub Gist to avoid repeats across runs
+7. **Pacing**: Waits `POST_INTERVAL_MS` between posts (default 3.5 min)
 
 
 ## ⚠️ Common Issues
 
-### Port Already in Use
-If you see `EADDRINUSE` error:
-- The bot uses `process.env.PORT` for online deployment compatibility
-- Locally defaults to port 10000
-- Ensure no other services are using the same port
+### Python Subprocess Timeout
+If Nostr publishing hangs:
+- Check `NOSTR_TIMEOUT_MS` env var (default 60s)
+- The bot will kill and retry on timeout
 
 ### Twitter Rate Limits
 - Free tier: 17 requests per 24 hours
 - Consider upgrading your Twitter API plan for higher limits
 - The bot will continue posting to Nostr even when Twitter is rate limited
 
-### Duplicate Function Errors
-If you see "already declared" errors:
-- Check for duplicate function or variable declarations
-- Common culprits: `postToTwitter`, `PORT`, `server` variables
+### Posts by @deSign_r Not Being Shared
+This is intentional — the bot skips posts where the author matches `deSign_r` to avoid sharing your own content. Remove the check in `D_Poster.js:164` if you want to disable this.
 
 ## 🚀 Deployment
 
@@ -138,7 +149,7 @@ The bot provides console logging for:
 - Successful posts to each platform
 - Rate limit notifications
 - Error messages and debugging info
-- WebSocket connection status
+- Post status for each platform
 
 ## 🤝 Contributing
 
