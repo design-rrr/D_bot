@@ -258,6 +258,10 @@ export async function runDBot() {
 
   for (const item of items) {
     if (!item.link || posted.has(item.link)) continue
+    if (item.author?.toLowerCase() === 'design_r') {
+      console.log(`Skipping @${item.author} post (bot owner): ${item.title}`)
+      continue
+    }
     let tweeted = false, nostrPosted = false
     try {
       await postToTwitter({ title: item.title, link: item.link, author: item.author })
