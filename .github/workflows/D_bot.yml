@@ -17,8 +17,11 @@ jobs:
         with:
           node-version: '20'
  
-      - name: Use npm mirror
-        run: npm config set registry https://registry.npmmirror.com
+      - name: Use npm mirror (optional)
+        run: |
+          if [ -n "$NPM_REGISTRY_MIRROR" ]; then
+            npm config set registry "$NPM_REGISTRY_MIRROR"
+          fi
 
       - name: Install dependencies
         run: npm install
@@ -47,3 +50,6 @@ jobs:
           NOSTR_PRIVATE_KEY: ${{ secrets.NOSTR_PRIVATE_KEY }}
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          POST_INTERVAL_MS: ${{ vars.POST_INTERVAL_MS }}
+          NOSTR_TIMEOUT_MS: ${{ vars.NOSTR_TIMEOUT_MS }}
+          NPM_REGISTRY_MIRROR: ${{ vars.NPM_REGISTRY_MIRROR }}
