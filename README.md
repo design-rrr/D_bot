@@ -1,5 +1,5 @@
 # D_Bot 🤖 
-`v0.3`
+`v2.1`
 
 A Node.js + Python bot that cross-posts design content from [Stacker News ~Design](https://stacker.news/~Design/r/deSign_r) to [Twitter (X)](https://x.com/DeSign__r) and [Nostr](https://iris.to/deSign_r), with human-friendly messaging and separate templates per platform.
 
