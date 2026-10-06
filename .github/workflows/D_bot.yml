@@ -6,7 +6,7 @@ on:
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -39,8 +39,7 @@ jobs:
           pwd
           ls -l
           echo "Starting D_Poster.js..."
-          node D_Poster.js || echo "Script failed with exit code $?"
-          echo "Script execution completed"
+          node D_Poster.js
 
         env:
           TWITTER_POSTER_API_KEY: ${{ secrets.TWITTER_POSTER_API_KEY }}
